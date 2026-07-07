@@ -590,7 +590,9 @@
 
     function initSocket() {
       // Connects to the host server serving this file
-      socket = io();
+      socket = io(window.location.origin, {
+        transports: ['websocket', 'polling']
+      });
 
       socket.on('connect', () => {
         updateConnectionStatus('connected');
