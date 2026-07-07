@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeviceLink — Commander Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              dark: '#030712',
+              card: '#0f172a',
+              border: '#1e293b',
+              accent: '#06b6d4', // Cyan
+              purple: '#8b5cf6', // Violet
+              success: '#10b981', // Emerald
+              error: '#ef4444', // Rose
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 0%, #083344 0%, #030712 70%);
+      color: #f3f4f6;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .accent-glow {
+      box-shadow: 0 0 40px -10px rgba(6, 182, 212, 0.25);
+    }
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.15); }
+    }
+    .pulse-dot {
+      animation: pulse-slow 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/30">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 py-4 px-6 md:px-12 flex justify-between items-center glass-panel sticky top-0 z-50">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+        <i class="fa-solid fa-link text-white text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-cyan-400 bg-clip-text text-transparent">DeviceLink</h1>
+        <p class="text-xs text-slate-400 font-medium tracking-wide uppercase">Commander Dashboard</p>
+      </div>
+    </div>
+    
+    <div id="connection-badge" class="flex items-center space-x-2 bg-slate-900/80 border border-white/5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-400">
+      <span class="w-2.5 h-2.5 rounded-full bg-slate-500 pulse-dot"></span>
+      <span class="status-label">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- Main Content View -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 flex flex-col gap-6">
+
+    <!-- Pairing Panel (Visible when disconnected/not in room) -->
+    <div id="setup-view" class="max-w-md w-full mx-auto my-12 glass-panel p-8 rounded-3xl border border-white/5 accent-glow flex flex-col gap-6">
+      <div class="text-center">
+        <i class="fa-solid fa-shield-halved text-5xl text-cyan-400 mb-4 drop-shadow-[0_0_15px_rgba(6,182,212,0.3)]"></i>
+        <h2 class="text-2xl font-bold text-white">Join Device Room</h2>
+        <p class="text-slate-400 text-sm mt-1">Enter the 6-digit room code displayed on the Agent device to connect</p>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Room Pairing Code</label>
+          <input type="text" id="room-code-input" placeholder="e.g., 946215" maxlength="6"
+            class="w-full text-center text-3xl font-bold tracking-widest bg-slate-950 border border-slate-800 rounded-2xl py-4 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-slate-700 uppercase" />
+        </div>
+        <button id="join-btn" class="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-cyan-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+          <span>Connect to Agent</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dashboard Panel (Visible when paired) -->
+    <div id="dashboard-view" class="hidden flex flex-col lg:grid lg:grid-cols-3 gap-6">
+      
+      <!-- Left Column: Controls & Info -->
+      <div class="lg:col-span-2 flex flex-col gap-6">
+        
+        <!-- Diagnostic Status Bar -->
+        <div class="glass-panel p-6 rounded-3xl flex flex-wrap gap-6 items-center justify-between">
+          <div class="flex items-center space-x-4">
+            <div id="agent-avatar" class="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+              <i class="fa-solid fa-mobile-screen-button text-2xl"></i>
+            </div>
+            <div>
+              <h3 id="agent-name" class="font-bold text-white text-lg">Android Agent</h3>
+              <p id="agent-status" class="text-xs text-cyan-400 font-semibold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                <span>Active Sharing Session</span>
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <!-- Room Code Badge -->
+            <div class="bg-cyan-500/10 border border-cyan-500/20 px-4 py-2 rounded-2xl">
+              <span class="block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Room Code</span>
+              <span id="active-room-code" class="text-lg font-extrabold text-cyan-400 tracking-wider font-mono">------</span>
+            </div>
+
+            <!-- Leave Session Button -->
+            <button id="leave-btn" class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-3 rounded-2xl active:scale-[0.98] transition-all" title="Disconnect Session">
+              <i class="fa-solid fa-power-off text-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Remote Controls Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          <!-- Command Vibrations & Beeps -->
+          <div class="glass-panel p-6 rounded-3xl flex flex-col justify-between gap-4">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-white text-base">Haptics & Audio Alerts</h4>
+                <i class="fa-solid fa-bell text-cyan-400"></i>
+              </div>
+              <p class="text-slate-400 text-xs">Vibrate the device or trigger local sound indicators instantly.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <button id="cmd-vibrate" class="bg-slate-900 hover:bg-slate-800 border border-white/5 py-3.5 px-4 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-[0.97] group">
+                <div class="w-10 h-10 rounded-xl bg-cyan-500/10 group-hover:bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <i class="fa-solid fa-vibration">📳</i>
+                </div>
+                <span class="text-xs font-bold text-white">Vibrate Device</span>
+              </button>
+              
+              <button id="cmd-sound" class="bg-slate-900 hover:bg-slate-800 border border-white/5 py-3.5 px-4 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-[0.97] group">
+                <div class="w-10 h-10 rounded-xl bg-purple-500/10 group-hover:bg-purple-500/20 flex items-center justify-center text-purple-400">
+                  <i class="fa-solid fa-volume-high"></i>
+                </div>
+                <span class="text-xs font-bold text-white">Trigger Sound</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Notification Dispatcher -->
+          <div class="glass-panel p-6 rounded-3xl flex flex-col justify-between gap-4">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-white text-base">Remote Notification Alert</h4>
+                <i class="fa-solid fa-message text-cyan-400"></i>
+              </div>
+              <p class="text-slate-400 text-xs text-ellipsis">Pop up a system alert dialog on the Agent's screen.</p>
+            </div>
+
+            <div class="flex flex-col gap-2.5">
+              <input type="text" id="notif-title" placeholder="Alert Title" value="Parental Alert"
+                class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none" />
+              <div class="flex gap-2">
+                <input type="text" id="notif-body" placeholder="Alert Message Body..." value="Please check your task list!"
+                  class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none" />
+                <button id="cmd-notify" class="bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all active:scale-[0.96]">
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diagnostic Stats Panels -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          <!-- Battery Stats -->
+          <div class="glass-panel p-6 rounded-3xl flex flex-col justify-between min-h-[140px]">
+            <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Battery Status</span>
+            <div class="flex items-baseline space-x-2 mt-4">
+              <span id="stat-battery-level" class="text-4xl font-extrabold text-white font-mono">0%</span>
+              <span id="stat-battery-state" class="text-xs font-bold text-slate-400">UNKNOWN</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-4">
+              <div id="stat-battery-bar" class="bg-slate-500 h-full w-[0%] transition-all duration-500"></div>
+            </div>
+          </div>
+
+          <!-- Network Type -->
+          <div class="glass-panel p-6 rounded-3xl flex flex-col justify-between min-h-[140px]">
+            <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Network Connection</span>
+            <div class="flex items-center space-x-3 mt-4">
+              <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-lg">
+                <i class="fa-solid fa-wifi"></i>
+              </div>
+              <div>
+                <span id="stat-network-type" class="block font-bold text-white text-base">Unknown</span>
+                <span id="stat-network-status" class="text-xs font-bold text-slate-400">Offline</span>
+              </div>
+            </div>
+            <div class="h-2"></div>
+          </div>
+
+          <!-- GPS Coordinates -->
+          <div class="glass-panel p-6 rounded-3xl flex flex-col justify-between min-h-[140px]">
+            <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Location Tracking</span>
+            <div class="mt-4">
+              <div id="stat-gps" class="text-sm font-bold text-white font-mono leading-relaxed truncate">No GPS data</div>
+              <div id="stat-gps-time" class="text-[10px] font-semibold text-slate-400 mt-0.5">Awaiting coordinates</div>
+            </div>
+            <a id="gps-link" href="#" target="_blank" class="hidden mt-2 text-xs font-bold text-cyan-400 hover:text-cyan-300 items-center gap-1">
+              <span>View on Google Maps</span>
+              <i class="fa-solid fa-up-right-from-square text-[10px]"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- Live Stream & Video Feeds -->
+        <div class="glass-panel p-6 rounded-3xl flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-white text-base">Live Video Feeds (WebRTC)</h4>
+            <div class="flex gap-2">
+              <span id="camera-status-badge" class="hidden px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-bold text-cyan-400 items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span> CAMERA ACTIVE
+              </span>
+              <span id="screen-status-badge" class="hidden px-2.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-[10px] font-bold text-purple-400 items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span> SCREEN ACTIVE
+              </span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Camera Stream Display -->
+            <div class="bg-slate-950/60 p-4 border border-white/5 rounded-2xl flex flex-col gap-3 min-h-[300px] justify-between relative overflow-hidden">
+              <div class="flex justify-between items-center z-10">
+                <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <i class="fa-solid fa-camera text-cyan-400"></i>
+                  <span>Camera Feed</span>
+                </span>
+                <div class="flex gap-1.5">
+                  <button id="btn-toggle-camera" class="bg-slate-900 hover:bg-slate-800 border border-white/5 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
+                    Start Stream
+                  </button>
+                  <button id="btn-flip-camera" class="hidden bg-slate-900 hover:bg-slate-800 border border-white/5 text-slate-300 hover:text-white p-1.5 rounded-xl text-xs transition-all" title="Flip Camera">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Stream Display Window -->
+              <div class="flex-1 w-full bg-slate-950 rounded-xl overflow-hidden relative flex items-center justify-center border border-white/5 min-h-[200px]">
+                <!-- Native Video Tag -->
+                <video id="camera-video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                
+                <!-- Fallback/Offline State -->
+                <div id="camera-placeholder" class="text-center p-6 flex flex-col items-center gap-2">
+                  <i class="fa-solid fa-video-slash text-4xl text-slate-700"></i>
+                  <p class="text-xs text-slate-500 font-medium">Camera Feed is Offline</p>
+                </div>
+
+                <!-- simulated feed fallback inside sandbox -->
+                <div id="camera-simulated" class="hidden absolute inset-0 bg-cyan-950/20 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center">
+                  <div class="relative w-16 h-16 rounded-full border border-cyan-500/30 flex items-center justify-center mb-3">
+                    <i class="fa-solid fa-circle-notch text-2xl text-cyan-400 animate-spin"></i>
+                    <i class="fa-solid fa-camera absolute text-xs text-cyan-400"></i>
+                  </div>
+                  <p class="text-xs font-bold text-cyan-400">Expo Go Sandbox Live Stream</p>
+                  <p class="text-[10px] text-slate-400 mt-1 max-w-[180px]">Simulated video stream active. Real WebRTC is bypassed in Expo Go.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Screen Share Display -->
+            <div class="bg-slate-950/60 p-4 border border-white/5 rounded-2xl flex flex-col gap-3 min-h-[300px] justify-between relative overflow-hidden">
+              <div class="flex justify-between items-center z-10">
+                <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <i class="fa-solid fa-display text-purple-400"></i>
+                  <span>Live Screen Stream</span>
+                </span>
+                <button id="btn-toggle-screen" class="bg-slate-900 hover:bg-slate-800 border border-white/5 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all">
+                  Request Screen
+                </button>
+              </div>
+
+              <!-- Stream Display Window -->
+              <div class="flex-1 w-full bg-slate-950 rounded-xl overflow-hidden relative flex items-center justify-center border border-white/5 min-h-[200px]">
+                <!-- Native Video Tag -->
+                <video id="screen-video" autoplay playsinline class="w-full h-full object-contain hidden"></video>
+
+                <!-- Fallback/Offline State -->
+                <div id="screen-placeholder" class="text-center p-6 flex flex-col items-center gap-2">
+                  <i class="fa-solid fa-desktop text-4xl text-slate-700"></i>
+                  <p class="text-xs text-slate-500 font-medium">Screen Share is Offline</p>
+                </div>
+
+                <!-- simulated screen share fallback inside sandbox -->
+                <div id="screen-simulated" class="hidden absolute inset-0 bg-slate-950 flex flex-col justify-between p-4 border border-slate-800 font-mono text-[10px]">
+                  <div class="flex justify-between items-center border-b border-white/5 pb-2 mb-2">
+                    <span class="text-cyan-400 font-bold flex items-center gap-1">
+                      <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <span>Pixel_8_Sandbox</span>
+                    </span>
+                    <span id="sim-screen-battery" class="text-slate-400">100% ⚡</span>
+                  </div>
+                  
+                  <!-- Animated Console simulation -->
+                  <div class="flex-1 flex flex-col gap-1.5 text-left text-slate-300 overflow-hidden select-none">
+                    <div class="text-[9px] text-slate-500 font-semibold mb-1">REALTIME TELEMETRY CAPTURE:</div>
+                    <div class="flex justify-between"><span>CPU USAGE:</span><span class="text-cyan-400 font-bold" id="sim-screen-cpu">12%</span></div>
+                    <div class="flex justify-between"><span>RAM USED:</span><span class="text-cyan-400 font-bold" id="sim-screen-ram">3.2 GB</span></div>
+                    <div class="flex justify-between"><span>NET LATENCY:</span><span class="text-emerald-400 font-bold">14ms</span></div>
+                    <div class="flex justify-between"><span>ACTIVE TASKS:</span><span class="text-purple-400 font-bold">socket, gps, sensors</span></div>
+                    <div class="flex justify-between"><span>ACCEL VECTOR:</span><span class="text-yellow-400" id="sim-screen-accel">0.00, 9.81, 0.00</span></div>
+                  </div>
+
+                  <div class="border-t border-white/5 pt-2 mt-2 flex justify-between text-[8px] text-slate-500 font-bold">
+                    <span>SANDBOX SIMULATION</span>
+                    <span id="sim-screen-clock">12:00:00</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sensor Graphs / Realtime Telemetry -->
+        <div class="glass-panel p-6 rounded-3xl flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-white text-base">Sensor Telemetry (Motion & Physics)</h4>
+            <i class="fa-solid fa-chart-line text-cyan-400"></i>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Accelerometer -->
+            <div class="flex flex-col gap-3 bg-slate-950/60 p-4 border border-white/5 rounded-2xl">
+              <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-gauge-high text-cyan-400"></i>
+                <span>Accelerometer (m/s²)</span>
+              </span>
+              <div class="flex flex-col gap-2">
+                <!-- X -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-red-400 font-bold">X:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="acc-x-bar" class="absolute bg-red-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="acc-x-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+                <!-- Y -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-emerald-400 font-bold">Y:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="acc-y-bar" class="absolute bg-emerald-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="acc-y-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+                <!-- Z -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-cyan-400 font-bold">Z:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="acc-z-bar" class="absolute bg-cyan-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="acc-z-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gyroscope -->
+            <div class="flex flex-col gap-3 bg-slate-950/60 p-4 border border-white/5 rounded-2xl">
+              <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-arrows-spin text-purple-400"></i>
+                <span>Gyroscope (rad/s)</span>
+              </span>
+              <div class="flex flex-col gap-2">
+                <!-- X -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-red-400 font-bold">X:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="gyro-x-bar" class="absolute bg-red-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="gyro-x-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+                <!-- Y -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-emerald-400 font-bold">Y:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="gyro-y-bar" class="absolute bg-emerald-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="gyro-y-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+                <!-- Z -->
+                <div class="flex items-center text-xs font-mono">
+                  <span class="w-6 text-cyan-400 font-bold">Z:</span>
+                  <div class="flex-1 bg-slate-800 h-2 rounded-full mx-2 relative overflow-hidden">
+                    <div id="gyro-z-bar" class="absolute bg-cyan-500 h-full w-[50%] left-[50%] transition-all duration-75"></div>
+                  </div>
+                  <span id="gyro-z-val" class="w-10 text-right text-slate-400">0.00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hardware & Metadata Profile -->
+        <div class="glass-panel p-6 rounded-3xl flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-white text-base">Hardware profile & specs</h4>
+            <i class="fa-solid fa-server text-cyan-400"></i>
+          </div>
+          <div id="profile-container" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
+            <div class="bg-slate-950/60 p-3 border border-white/5 rounded-xl">
+              <span class="block text-slate-500 text-[10px] uppercase font-bold mb-1">Model</span>
+              <span id="prof-model" class="text-white font-bold">Awaiting data</span>
+            </div>
+            <div class="bg-slate-950/60 p-3 border border-white/5 rounded-xl">
+              <span class="block text-slate-500 text-[10px] uppercase font-bold mb-1">Manufacturer</span>
+              <span id="prof-manuf" class="text-white font-bold">Awaiting data</span>
+            </div>
+            <div class="bg-slate-950/60 p-3 border border-white/5 rounded-xl">
+              <span class="block text-slate-500 text-[10px] uppercase font-bold mb-1">OS version</span>
+              <span id="prof-os" class="text-white font-bold">Awaiting data</span>
+            </div>
+            <div class="bg-slate-950/60 p-3 border border-white/5 rounded-xl">
+              <span class="block text-slate-500 text-[10px] uppercase font-bold mb-1">Total Memory</span>
+              <span id="prof-memory" class="text-white font-bold">Awaiting data</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Chat & Timeline -->
+      <div class="flex flex-col gap-6 h-[720px] lg:h-auto">
+        
+        <!-- Live Chat Panel -->
+        <div class="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden min-h-[350px]">
+          <div class="p-5 border-b border-white/5 flex items-center justify-between bg-slate-950/20">
+            <h4 class="font-bold text-white text-base flex items-center gap-2">
+              <i class="fa-solid fa-comment-dots text-cyan-400"></i>
+              <span>Live Chat Panel</span>
+            </h4>
+            <span id="typing-indicator" class="hidden text-xs text-cyan-400 font-semibold italic flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+              <span>Agent is typing...</span>
+            </span>
+          </div>
+
+          <!-- Chat History -->
+          <div id="chat-messages" class="flex-1 overflow-y-auto p-4 flex flex-col-reverse gap-3 scrollbar-thin">
+            <!-- Messages are prepended here dynamically -->
+          </div>
+
+          <!-- Chat Input -->
+          <div class="p-4 border-t border-white/5 bg-slate-950/40">
+            <div class="flex gap-2">
+              <input type="text" id="chat-input" placeholder="Type a message..."
+                class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none" />
+              <button id="chat-send" class="w-10 h-10 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white flex items-center justify-center transition-all active:scale-[0.96]">
+                <i class="fa-solid fa-paper-plane"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Log Log panel -->
+        <div class="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden min-h-[300px]">
+          <div class="p-5 border-b border-white/5 flex items-center justify-between bg-slate-950/20">
+            <h4 class="font-bold text-white text-base flex items-center gap-2">
+              <i class="fa-solid fa-list-check text-cyan-400"></i>
+              <span>Session Activity Timeline</span>
+            </h4>
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Real-time log</span>
+          </div>
+
+          <div id="activity-timeline" class="flex-1 overflow-y-auto p-5 flex flex-col gap-4 scrollbar-thin font-mono text-[11px]">
+            <!-- Timeline elements dynamically injected -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Script for controller logic -->
+  <script>
+    let socket = null;
+    let roomCode = '';
+    let activePeerConnections = { camera: null, screen: null };
+    let activeFeatures = { camera: false, screen: false, location: false, sensors: false, contacts: false };
+    
+    const elements = {
+      setupView: document.getElementById('setup-view'),
+      dashboardView: document.getElementById('dashboard-view'),
+      roomCodeInput: document.getElementById('room-code-input'),
+      joinBtn: document.getElementById('join-btn'),
+      leaveBtn: document.getElementById('leave-btn'),
+      connectionBadge: document.getElementById('connection-badge'),
+      activeRoomCode: document.getElementById('active-room-code'),
+      agentName: document.getElementById('agent-name'),
+      
+      // Control Buttons
+      cmdVibrate: document.getElementById('cmd-vibrate'),
+      cmdSound: document.getElementById('cmd-sound'),
+      cmdNotify: document.getElementById('cmd-notify'),
+      notifTitle: document.getElementById('notif-title'),
+      notifBody: document.getElementById('notif-body'),
+      
+      // Stats Elements
+      statBatteryLevel: document.getElementById('stat-battery-level'),
+      statBatteryState: document.getElementById('stat-battery-state'),
+      statBatteryBar: document.getElementById('stat-battery-bar'),
+      statNetworkType: document.getElementById('stat-network-type'),
+      statNetworkStatus: document.getElementById('stat-network-status'),
+      statGps: document.getElementById('stat-gps'),
+      statGpsTime: document.getElementById('stat-gps-time'),
+      gpsLink: document.getElementById('gps-link'),
+      
+      // Spec profile
+      profModel: document.getElementById('prof-model'),
+      profManuf: document.getElementById('prof-manuf'),
+      profOs: document.getElementById('prof-os'),
+      profMemory: document.getElementById('prof-memory'),
+      
+      // Sensor Bars & values
+      accXBar: document.getElementById('acc-x-bar'),
+      accYBar: document.getElementById('acc-y-bar'),
+      accZBar: document.getElementById('acc-z-bar'),
+      accXVal: document.getElementById('acc-x-val'),
+      accYVal: document.getElementById('acc-y-val'),
+      accZVal: document.getElementById('acc-z-val'),
+      
+      gyroXBar: document.getElementById('gyro-x-bar'),
+      gyroYBar: document.getElementById('gyro-y-bar'),
+      gyroZBar: document.getElementById('gyro-z-bar'),
+      gyroXVal: document.getElementById('gyro-x-val'),
+      gyroYVal: document.getElementById('gyro-y-val'),
+      gyroZVal: document.getElementById('gyro-z-val'),
+      
+      // Chat Elements
+      chatMessages: document.getElementById('chat-messages'),
+      chatInput: document.getElementById('chat-input'),
+      chatSend: document.getElementById('chat-send'),
+      typingIndicator: document.getElementById('typing-indicator'),
+      
+      // Timeline
+      activityTimeline: document.getElementById('activity-timeline'),
+    };
+
+    // Auto connect socket on load
+    initSocket();
+
+    function initSocket() {
+      // Connects to the host server serving this file
+      socket = io();
+
+      socket.on('connect', () => {
+        updateConnectionStatus('connected');
+        addLocalLog('🚪 Connection to signaling gateway established.');
+      });
+
+      socket.on('disconnect', () => {
+        updateConnectionStatus('disconnected');
+        addLocalLog('🔌 Connection to gateway disconnected.');
+        resetDashboard();
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('Socket connect error:', err);
+        updateConnectionStatus('connecting');
+      });
+
+      // Socket updates when in room
+      socket.on('room-update', (data) => {
+        console.log('Room Update:', data);
+        handleRoomUpdate(data);
+      });
+
+      socket.on('room-paired', (data) => {
+        console.log('Room Paired:', data);
+        addLocalLog('👥 Agent paired successfully with this room!');
+      });
+
+      socket.on('device-stats', (data) => {
+        console.log('Stats update:', data);
+        handleDeviceStats(data);
+      });
+
+      socket.on('location-update', (data) => {
+        console.log('Location update:', data);
+        handleLocationUpdate(data);
+      });
+
+      socket.on('sensor-data', (data) => {
+        handleSensorData(data);
+      });
+
+      socket.on('feature-toggle', (data) => {
+        console.log('Feature Toggle:', data);
+        handleFeatureToggle(data.feature, data.enabled);
+      });
+
+      socket.on('webrtc-offer', async (data) => {
+        console.log('WebRTC Offer received:', data.type);
+        try {
+          if (activePeerConnections[data.type]) {
+            activePeerConnections[data.type].close();
+          }
+
+          const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+          });
+          activePeerConnections[data.type] = pc;
+
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit('webrtc-ice-candidate', { candidate: event.candidate, type: data.type });
+            }
+          };
+
+          pc.ontrack = (event) => {
+            console.log('WebRTC Track acquired:', data.type);
+            const stream = event.streams[0];
+            const video = data.type === 'camera' ? document.getElementById('camera-video') : document.getElementById('screen-video');
+            const placeholder = data.type === 'camera' ? document.getElementById('camera-placeholder') : document.getElementById('screen-placeholder');
+            const simulated = data.type === 'camera' ? document.getElementById('camera-simulated') : document.getElementById('screen-simulated');
+            
+            if (video) {
+              video.srcObject = stream;
+              video.classList.remove('hidden');
+              video.play().catch(e => console.warn('Video play error:', e));
+            }
+            if (placeholder) placeholder.classList.add('hidden');
+            if (simulated) simulated.classList.add('hidden');
+          };
+
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          socket.emit('webrtc-answer', { sdp: answer, type: data.type });
+        } catch (err) {
+          console.error('Error handling WebRTC offer:', err);
+        }
+      });
+
+      socket.on('webrtc-ice-candidate', async (data) => {
+        try {
+          const pc = activePeerConnections[data.type];
+          if (pc && data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      });
+
+      socket.on('sensor-data', (data) => {
+        handleSensorData(data);
+      });
+
+      socket.on('chat-message', (data) => {
+        appendChatMessage(data.senderRole || 'agent', data.text, data.timestamp);
+      });
+
+      socket.on('typing-start', () => {
+        elements.typingIndicator.classList.remove('hidden');
+      });
+
+      socket.on('typing-stop', () => {
+        elements.typingIndicator.classList.add('hidden');
+      });
+
+      socket.on('vibrate-ack', (ack) => {
+        addLocalLog(`📳 Vibrate Command ACK received: ${ack.success ? 'Success' : 'Failed'}`);
+      });
+
+      socket.on('notification-ack', (ack) => {
+        addLocalLog(`💬 Notification Command ACK received: ${ack.success ? 'Success' : 'Failed'}`);
+      });
+
+      socket.on('play-sound-ack', (ack) => {
+        addLocalLog(`🔊 Audio Alarm Command ACK received: ${ack.success ? 'Success' : 'Failed'}`);
+      });
+
+      // Sync activity logs from server
+      socket.on('activity-log', (log) => {
+        if (log && Array.isArray(log)) {
+          elements.activityTimeline.innerHTML = '';
+          log.reverse().forEach((item) => {
+            addServerLogItem(item);
+          });
+        }
+      });
+
+      socket.on('activity-log-entry', (entry) => {
+        addServerLogItem(entry);
+      });
+    }
+
+    // Connect handler
+    elements.joinBtn.addEventListener('click', () => {
+      const code = elements.roomCodeInput.value.trim().toUpperCase();
+      if (code.length !== 6) {
+        alert('Please enter a valid 6-digit room code');
+        return;
+      }
+
+      roomCode = code;
+      
+      socket.emit('join-room', {
+        code: roomCode,
+        role: 'commander',
+        deviceName: 'Commander Web Console',
+      }, (response) => {
+        console.log('Join room response:', response);
+        if (response && response.success) {
+          showDashboard(response.room);
+          addLocalLog(`🚪 Successfully joined Room ${roomCode} as commander.`);
+          socket.emit('activity-log'); // request historical timeline logs
+        } else {
+          alert(response.error || 'Failed to join room. Verify code is correct.');
+        }
+      });
+    });
+
+    // Leave handler
+    elements.leaveBtn.addEventListener('click', () => {
+      socket.emit('leave-room');
+      resetDashboard();
+    });
+
+    // Command Triggers
+    elements.cmdVibrate.addEventListener('click', () => {
+      socket.emit('remote-vibrate');
+      addLocalLog('⚡ Sent vibration command to Agent.');
+    });
+
+    elements.cmdSound.addEventListener('click', () => {
+      socket.emit('remote-sound');
+      addLocalLog('⚡ Sent audio alert command to Agent.');
+    });
+
+    elements.cmdNotify.addEventListener('click', () => {
+      const title = elements.notifTitle.value.trim();
+      const body = elements.notifBody.value.trim();
+      if (!title || !body) return;
+      socket.emit('remote-notify', { title, body });
+      addLocalLog(`⚡ Sent alert notification: "${title}".`);
+    });
+
+    document.getElementById('btn-toggle-camera').addEventListener('click', () => {
+      const action = activeFeatures.camera ? 'stop-camera' : 'start-camera';
+      socket.emit('remote-request', { action });
+      addLocalLog(`⚡ Requested to ${activeFeatures.camera ? 'STOP' : 'START'} Agent camera stream.`);
+    });
+
+    document.getElementById('btn-flip-camera').addEventListener('click', () => {
+      socket.emit('remote-request', { action: 'switch-camera' });
+      addLocalLog('⚡ Sent command to flip Agent camera.');
+    });
+
+    document.getElementById('btn-toggle-screen').addEventListener('click', () => {
+      const action = activeFeatures.screen ? 'stop-screen-share' : 'start-screen-share';
+      socket.emit('remote-request', { action });
+      addLocalLog(`⚡ Requested to ${activeFeatures.screen ? 'STOP' : 'START'} Agent screen share stream.`);
+    });
+
+    // Chat Trigger
+    elements.chatSend.addEventListener('click', sendChatMessage);
+    elements.chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendChatMessage();
+    });
+
+    let typingTimeout = null;
+    elements.chatInput.addEventListener('input', () => {
+      socket.emit('typing-start');
+      if (typingTimeout) clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        socket.emit('typing-stop');
+      }, 2000);
+    });
+
+    function sendChatMessage() {
+      const text = elements.chatInput.value.trim();
+      if (!text) return;
+      socket.emit('chat-message', { text });
+      appendChatMessage('commander', text, Date.now());
+      elements.chatInput.value = '';
+      socket.emit('typing-stop');
+    }
+
+    // UI State Helpers
+    function updateConnectionStatus(status) {
+      const badge = elements.connectionBadge;
+      const dot = badge.querySelector('span');
+      const label = badge.querySelector('.status-label');
+
+      badge.className = "flex items-center space-x-2 bg-slate-900/80 border px-3 py-1.5 rounded-full text-xs font-semibold ";
+      
+      if (status === 'connected') {
+        badge.classList.add('border-cyan-500/30', 'text-cyan-400');
+        dot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400 pulse-dot";
+        label.textContent = "Signaling Online";
+      } else if (status === 'connecting') {
+        badge.classList.add('border-yellow-500/30', 'text-yellow-400');
+        dot.className = "w-2.5 h-2.5 rounded-full bg-yellow-400 pulse-dot";
+        label.textContent = "Connecting...";
+      } else {
+        badge.classList.add('border-red-500/30', 'text-red-400');
+        dot.className = "w-2.5 h-2.5 rounded-full bg-red-400";
+        label.textContent = "Signaling Offline";
+      }
+    }
+
+    function showDashboard(room) {
+      elements.setupView.classList.add('hidden');
+      elements.dashboardView.classList.remove('hidden');
+      elements.activeRoomCode.textContent = roomCode;
+      
+      // Update Agent list
+      const users = room.users || [];
+      const agent = Object.values(users).find(u => u.role === 'agent');
+      if (agent) {
+        elements.agentName.textContent = agent.deviceName || 'Android Agent';
+        elements.agentStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span><span>Active Sharing Session</span>';
+      }
+    }
+
+    function resetDashboard() {
+      elements.setupView.classList.remove('hidden');
+      elements.dashboardView.classList.add('hidden');
+      roomCode = '';
+      elements.activeRoomCode.textContent = '------';
+      elements.chatMessages.innerHTML = '';
+      elements.activityTimeline.innerHTML = '';
+      
+      // Close WebRTC connections
+      Object.keys(activePeerConnections).forEach(type => {
+        if (activePeerConnections[type]) {
+          activePeerConnections[type].close();
+          activePeerConnections[type] = null;
+        }
+      });
+      // Reset features
+      Object.keys(activeFeatures).forEach(f => {
+        handleFeatureToggle(f, false);
+      });
+
+      resetTelemetryStats();
+    }
+
+    function resetTelemetryStats() {
+      elements.statBatteryLevel.textContent = '0%';
+      elements.statBatteryState.textContent = 'UNKNOWN';
+      elements.statBatteryBar.className = "bg-slate-500 h-full w-[0%]";
+      elements.statNetworkType.textContent = 'Unknown';
+      elements.statNetworkStatus.textContent = 'Offline';
+      elements.statGps.textContent = 'No GPS data';
+      elements.statGpsTime.textContent = 'Awaiting coordinates';
+      elements.gpsLink.classList.add('hidden');
+      
+      elements.profModel.textContent = 'Awaiting data';
+      elements.profManuf.textContent = 'Awaiting data';
+      elements.profOs.textContent = 'Awaiting data';
+      elements.profMemory.textContent = 'Awaiting data';
+    }
+
+    function handleRoomUpdate(data) {
+      if (data.type === 'user-left') {
+        const leftRole = data.user?.role;
+        if (leftRole === 'agent') {
+          elements.agentName.textContent = 'Android Agent (Disconnected)';
+          elements.agentStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span><span>Agent offline</span>';
+          addLocalLog('🔌 Agent disconnected from this room.');
+          
+          // Reset streams and features since Agent left
+          Object.keys(activePeerConnections).forEach(type => {
+            if (activePeerConnections[type]) {
+              activePeerConnections[type].close();
+              activePeerConnections[type] = null;
+            }
+          });
+          Object.keys(activeFeatures).forEach(f => {
+            handleFeatureToggle(f, false);
+          });
+        }
+      } else if (data.type === 'user-joined') {
+        const joined = data.user;
+        if (joined.role === 'agent') {
+          elements.agentName.textContent = joined.deviceName || 'Android Agent';
+          elements.agentStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span><span>Active Sharing Session</span>';
+          addLocalLog(`👥 Agent "${joined.deviceName}" joined the room.`);
+        }
+      }
+    }
+
+    function handleFeatureToggle(feature, enabled) {
+      activeFeatures[feature] = enabled;
+      
+      if (feature === 'camera') {
+        const btn = document.getElementById('btn-toggle-camera');
+        const flipBtn = document.getElementById('btn-flip-camera');
+        const badge = document.getElementById('camera-status-badge');
+        const video = document.getElementById('camera-video');
+        const placeholder = document.getElementById('camera-placeholder');
+        const simulated = document.getElementById('camera-simulated');
+        
+        if (enabled) {
+          btn.textContent = 'Stop Stream';
+          btn.className = "bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all";
+          flipBtn.classList.remove('hidden');
+          badge.classList.remove('hidden');
+          badge.classList.add('flex');
+          
+          if (video && video.srcObject) {
+            video.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            simulated.classList.add('hidden');
+          } else if (simulated) {
+            video.classList.add('hidden');
+            placeholder.classList.add('hidden');
+            simulated.classList.remove('hidden');
+          }
+        } else {
+          btn.textContent = 'Start Stream';
+          btn.className = "bg-slate-900 hover:bg-slate-800 border border-white/5 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all";
+          flipBtn.classList.add('hidden');
+          badge.classList.add('hidden');
+          badge.classList.remove('flex');
+          
+          if (video) {
+            video.classList.add('hidden');
+            video.srcObject = null;
+          }
+          if (simulated) simulated.classList.add('hidden');
+          if (placeholder) placeholder.classList.remove('hidden');
+          
+          if (activePeerConnections.camera) {
+            activePeerConnections.camera.close();
+            activePeerConnections.camera = null;
+          }
+        }
+      } else if (feature === 'screen') {
+        const btn = document.getElementById('btn-toggle-screen');
+        const badge = document.getElementById('screen-status-badge');
+        const video = document.getElementById('screen-video');
+        const placeholder = document.getElementById('screen-placeholder');
+        const simulated = document.getElementById('screen-simulated');
+        
+        if (enabled) {
+          btn.textContent = 'Stop Screen';
+          btn.className = "bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all";
+          badge.classList.remove('hidden');
+          badge.classList.add('flex');
+          
+          if (video && video.srcObject) {
+            video.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            simulated.classList.add('hidden');
+          } else if (simulated) {
+            video.classList.add('hidden');
+            placeholder.classList.add('hidden');
+            simulated.classList.remove('hidden');
+          }
+        } else {
+          btn.textContent = 'Request Screen';
+          btn.className = "bg-slate-900 hover:bg-slate-800 border border-white/5 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all";
+          badge.classList.add('hidden');
+          badge.classList.remove('flex');
+          
+          if (video) {
+            video.classList.add('hidden');
+            video.srcObject = null;
+          }
+          if (simulated) simulated.classList.add('hidden');
+          if (placeholder) placeholder.classList.remove('hidden');
+          
+          if (activePeerConnections.screen) {
+            activePeerConnections.screen.close();
+            activePeerConnections.screen = null;
+          }
+        }
+      }
+    }
+
+    // Update sandbox clock
+    setInterval(() => {
+      const clock = document.getElementById('sim-screen-clock');
+      if (clock) {
+        clock.textContent = new Date().toLocaleTimeString([], { hour12: false });
+      }
+    }, 1000);
+
+    function handleDeviceStats(data) {
+      // 1. Battery
+      if (data.battery) {
+        const level = Math.round(data.battery.level * 100);
+        const state = data.battery.batteryState || 'UNKNOWN';
+        elements.statBatteryLevel.textContent = `${level}%`;
+        elements.statBatteryState.textContent = state;
+        elements.statBatteryBar.style.width = `${level}%`;
+        
+        elements.statBatteryBar.className = "h-full transition-all duration-500 " + 
+          (level > 60 ? 'bg-cyan-500' : (level > 20 ? 'bg-yellow-500' : 'bg-red-500'));
+
+        const simBattery = document.getElementById('sim-screen-battery');
+        if (simBattery) {
+          simBattery.textContent = `${level}% ${state === 'CHARGING' ? '⚡' : ''}`;
+        }
+      }
+
+      // 2. Network
+      if (data.network) {
+        elements.statNetworkType.textContent = data.network.type ? data.network.type.toUpperCase() : 'WIFI';
+        elements.statNetworkStatus.textContent = data.network.isConnected ? 'Connected' : 'Disconnected';
+        elements.statNetworkStatus.className = data.network.isConnected ? 'text-cyan-400 text-xs font-bold' : 'text-red-400 text-xs font-bold';
+      }
+
+      // 3. Hardware Profile
+      if (data.device) {
+        elements.profModel.textContent = data.device.model || 'Unknown';
+        elements.profManuf.textContent = data.device.manufacturer || 'Unknown';
+        elements.profOs.textContent = `${data.device.osName} ${data.device.osVersion}`;
+        elements.profMemory.textContent = data.device.totalMemory ? `${Math.round(data.device.totalMemory / (1024*1024*1024))} GB` : 'N/A';
+
+        const simCpu = document.getElementById('sim-screen-cpu');
+        const simRam = document.getElementById('sim-screen-ram');
+        if (simCpu) {
+          simCpu.textContent = `${Math.floor(Math.random() * 15 + (activeFeatures.screen ? 25 : 5))}%`;
+        }
+        if (simRam) {
+          const totalMem = data.device.totalMemory ? `${Math.round(data.device.totalMemory / (1024*1024*1024))} GB` : '8 GB';
+          simRam.textContent = `${(1.8 + Math.random() * 0.4).toFixed(1)} GB / ${totalMem}`;
+        }
+      }
+    }
+
+    function handleLocationUpdate(data) {
+      if (data.latitude && data.longitude) {
+        elements.statGps.textContent = `${data.latitude.toFixed(5)}, ${data.longitude.toFixed(5)}`;
+        
+        const date = new Date(data.timestamp || Date.now());
+        elements.statGpsTime.textContent = `Updated: ${date.toLocaleTimeString()}`;
+        
+        elements.gpsLink.href = `https://www.google.com/maps/search/?api=1&query=${data.latitude},${data.longitude}`;
+        elements.gpsLink.classList.remove('hidden');
+        elements.gpsLink.classList.add('flex');
+      }
+    }
+
+    function handleSensorData(data) {
+      // 1. Accelerometer
+      if (data.accelerometer) {
+        const { x, y, z } = data.accelerometer;
+        elements.accXVal.textContent = x.toFixed(2);
+        elements.accYVal.textContent = y.toFixed(2);
+        elements.accZVal.textContent = z.toFixed(2);
+        
+        // Render 0-10m/s as percentage centered at 50%
+        elements.accXBar.style.width = `${Math.min(Math.max((x / 20) * 100 + 50, 0), 100)}%`;
+        elements.accYBar.style.width = `${Math.min(Math.max((y / 20) * 100 + 50, 0), 100)}%`;
+        elements.accZBar.style.width = `${Math.min(Math.max((z / 20) * 100 + 50, 0), 100)}%`;
+
+        const simAccel = document.getElementById('sim-screen-accel');
+        if (simAccel) {
+          simAccel.textContent = `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`;
+        }
+      }
+
+      // 2. Gyroscope
+      if (data.gyroscope) {
+        const { x, y, z } = data.gyroscope;
+        elements.gyroXVal.textContent = x.toFixed(2);
+        elements.gyroYVal.textContent = y.toFixed(2);
+        elements.gyroZVal.textContent = z.toFixed(2);
+        
+        elements.gyroXBar.style.width = `${Math.min(Math.max((x / 5) * 100 + 50, 0), 100)}%`;
+        elements.gyroYBar.style.width = `${Math.min(Math.max((y / 5) * 100 + 50, 0), 100)}%`;
+        elements.gyroZBar.style.width = `${Math.min(Math.max((z / 5) * 100 + 50, 0), 100)}%`;
+      }
+    }
+
+    // Chat Helpers
+    function appendChatMessage(role, text, timestamp) {
+      const bubble = document.createElement('div');
+      const isMyMessage = role === 'commander';
+      
+      bubble.className = `flex flex-col max-w-[80%] ${isMyMessage ? 'self-end items-end' : 'self-start items-start'}`;
+      
+      const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      bubble.innerHTML = `
+        <div class="px-4 py-2.5 rounded-2xl text-xs font-medium ${
+          isMyMessage 
+            ? 'bg-gradient-to-tr from-cyan-600 to-blue-600 text-white rounded-tr-none' 
+            : 'bg-slate-800 text-slate-100 rounded-tl-none border border-white/5'
+        }">
+          ${escapeHtml(text)}
+        </div>
+        <span class="text-[9px] text-slate-500 font-semibold mt-1 px-1 font-mono">${timeStr}</span>
+      `;
+      
+      elements.chatMessages.prepend(bubble);
+      elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    }
+
+    // Timeline Logging
+    function addLocalLog(text) {
+      const log = document.createElement('div');
+      log.className = "text-slate-400 py-0.5 border-l-2 border-cyan-500/30 pl-3 leading-relaxed";
+      
+      const time = new Date().toLocaleTimeString([], { hour12: false });
+      log.innerHTML = `<span class="text-cyan-400 font-bold font-mono mr-1.5">[${time}]</span> ${text}`;
+      
+      elements.activityTimeline.prepend(log);
+    }
+
+    function addServerLogItem(item) {
+      const log = document.createElement('div');
+      log.className = "text-slate-300 py-1 border-l-2 border-slate-700 pl-3 leading-relaxed flex items-start gap-2";
+      
+      const time = new Date(item.timestamp).toLocaleTimeString([], { hour12: false });
+      const icon = item.icon || '📝';
+      
+      log.innerHTML = `
+        <span class="text-slate-500 font-bold font-mono mr-1">[${time}]</span>
+        <span class="text-base leading-none">${icon}</span>
+        <span class="flex-1">${escapeHtml(item.description)}</span>
+      `;
+      
+      elements.activityTimeline.prepend(log);
+    }
+
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+  </script>
+</body>
+</html>
